@@ -268,6 +268,7 @@ class ModbusTransactionManager(object):
         last_exception = None
         try:
             self.client.connect()
+            # TODO: self.sm4_key 加密， sm3 hash
             packet = self.client.framer.buildPacket(packet)
             if _logger.isEnabledFor(logging.DEBUG):
                 _logger.debug("SEND: " + hexlify_packets(packet))
@@ -291,6 +292,7 @@ class ModbusTransactionManager(object):
                 local_echo_packet = self._recv(size, full)
                 if local_echo_packet != packet:
                     return b'', "Wrong local echo"
+            # TODO: 考虑 server加密后的 response_length
             result = self._recv(response_length, full)
             # result2 = self._recv(response_length, full)
             if _logger.isEnabledFor(logging.DEBUG):

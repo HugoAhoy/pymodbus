@@ -68,6 +68,9 @@ class ModbusBaseRequestHandler(socketserver.BaseRequestHandler):
                     response = request.execute(self.server.context[unit_id])
             else:
                 context = self.server.context[request.unit_id]
+                # TODO: if is key exchange related requests, special process
+                # if isinstance(request, KeyExchangeRequest):
+                #     self.server.xxx = getValue(request)
                 response = request.execute(context)
         except NoSuchSlaveException as ex:
             _logger.debug("requested slave does "
@@ -198,6 +201,13 @@ class ModbusConnectedRequestHandler(ModbusBaseRequestHandler):
                 if _logger.isEnabledFor(logging.DEBUG):
                     _logger.debug('Handling data: ' + hexlify_packets(data))
                 single = self.server.context.single
+                # TODO: decrypt&check
+                # if self.sm4_key is not None:
+                #     data = decrypt(data)
+                #     if checkData(data):
+                #         ...
+                #     else:
+                #         ...
                 self.framer.processIncomingPacket(data, self.execute, units,
                                                   single=single)
             except socket.timeout as msg:

@@ -214,6 +214,11 @@ class ModbusTcpClient(BaseModbusClient):
                 source_address=self.source_address)
             _logger.debug("Connection to Modbus server established. "
                           "Socket {}".format(self.socket.getsockname()))
+            # TODO: key exchange
+            # SM2 生成公私钥
+            # 发送共钥 client.send(KeyExchangeRequest)
+            # 等待response
+            # self.sm4_key = processResponse()
         except socket.error as msg:
             _logger.error('Connection to (%s, %s) '
                           'failed: %s' % (self.host, self.port, msg))
