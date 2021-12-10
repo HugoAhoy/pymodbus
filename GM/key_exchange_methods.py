@@ -12,6 +12,45 @@ b = int(ecc_table['b'], 16)
 g = ecc_table['g']
 gx = g[0:len(g)//2]
 gy = g[len(g)//2:]
+klen = 16
+w = math.ceil(math.ceil(math.log2(n))/2.0)-1
+tmp_sm2 = sm2.CryptSM2('', '')
+h = math.floor((p**0.5+1)**2/n)
+
+def GenR():
+    r = random.randint(1, n-1) # 随机数r
+    tmp_sm2 = sm2.CryptSM2('', '')
+    R = tmp_sm2._kg(r, g) # 生成的点R
+    return R, r
+
+def ComputeXBar(Point):
+    x = int(Point[0:len(Point)//2], 16)
+    bar_x = 2**w+(x & (2**w-1))
+    return bar_x
+
+def ComputeT(privkey, bar_x, r):
+    t = (int(privkey, 16)+bar_x*r) % n
+    return t
+
+def ComputeFinalPoint(t, bar_x, R, pubkey):
+    """
+    Compute eclipse point U(V) in client(server).
+    For U, the input argument is (tA, bar_x2, RB, pubkey_B)
+    For V, the input argument is (tB, bar_x1, RA, pubkey_A)
+    """
+    x_times_R = tmp_sm2._kg(bar_x, R)
+    ptsum = sm2genkey.add([int(pubkey[0:len(pubkey)//2], 16), int(pubkey[len(pubkey)//2:], 16)],
+                        [int(x_times_R[0:len(x_times_R)//2], 16), int(x_times_R[len(x_times_R)//2:], 16)], a, p)
+    # print(ptsum)
+    Point = tmp_sm2._kg(t*h, hex(ptsum[0])[2:]+hex(ptsum[1])[2:])
+    return Point
+    
+
+def GenSymKey(Point, ZA, ZB):
+    Pointbit = bin(int(Point[0:len(Point)//2], 16))[2:] + bin(int(Point[len(Point)//2:], 16))[2:]
+    Pointbit = Pointbit.zfill(512)
+    z = Pointbit+bin(int(ZA, 16))[2:].zfill(256)+bin(int(ZB, 16))[2:].zfill(256)
+    return sm3.sm3_kdf(z.encode('utf8'), klen)
 
 
 if __name__ == "__main__":
