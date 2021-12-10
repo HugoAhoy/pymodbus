@@ -16,6 +16,8 @@ from pymodbus.transaction import ModbusSocketFramer, ModbusBinaryFramer
 from pymodbus.transaction import ModbusAsciiFramer, ModbusRtuFramer
 from pymodbus.transaction import ModbusTlsFramer
 from pymodbus.client.common import ModbusClientMixin
+from GM.key_exchange_methods import GenR
+from pymodbus.key_exchange_message import EclipsePointRequest, EclipsePointResponse
 
 # --------------------------------------------------------------------------- #
 # Logging
@@ -199,6 +201,7 @@ class ModbusTcpClient(BaseModbusClient):
         self.socket = None
         self.timeout = kwargs.get('timeout',  Defaults.Timeout)
         BaseModbusClient.__init__(self, framer(ClientDecoder(), self), **kwargs)
+        self.register(EclipsePointResponse) # register EclipsePointResponse function
 
     def connect(self):
         """ Connect to the modbus tcp server
@@ -219,6 +222,8 @@ class ModbusTcpClient(BaseModbusClient):
             # 发送共钥 client.send(KeyExchangeRequest)
             # 等待response
             # self.sm4_key = processResponse()
+            self.key_exchange()
+
         except socket.error as msg:
             _logger.error('Connection to (%s, %s) '
                           'failed: %s' % (self.host, self.port, msg))
@@ -240,6 +245,17 @@ class ModbusTcpClient(BaseModbusClient):
         if ready[0]:
             data = self.socket.recv(1024)
         return data
+
+    def key_exchange(self):
+        """
+        Exchange SM4 keys after connection is established.
+        """
+        self.RA, self.rA = GenR()
+        rr = self.execute(EclipsePointRequest(self.RA, unit=0x1)) # unit=1 is to require response and avoid broadcast
+        _logger.debug(rr)
+        self.RB = rr.R
+        # for debug, see if self.server.RA, and self.server.RB are equal with client's
+        _logger.debug("client.RA={}, client.RB={}".format(self.RA, self.RB))
 
     def _send(self, request):
         """ Sends data on the underlying socket

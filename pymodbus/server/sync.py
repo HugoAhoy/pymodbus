@@ -4,6 +4,7 @@ Implementation of a Threaded Modbus Server
 
 """
 from binascii import b2a_hex
+from os import getenv
 import serial
 import socket
 import ssl
@@ -19,6 +20,8 @@ from pymodbus.transaction import *
 from pymodbus.exceptions import NotImplementedException, NoSuchSlaveException
 from pymodbus.pdu import ModbusExceptions as merror
 from pymodbus.compat import socketserver, byte2int
+from pymodbus.key_exchange_message import EclipsePointRequest, EclipsePointResponse
+from GM.key_exchange_methods import GenR
 
 # --------------------------------------------------------------------------- #
 # Logging
@@ -67,11 +70,18 @@ class ModbusBaseRequestHandler(socketserver.BaseRequestHandler):
                 for unit_id in self.server.context.slaves():
                     response = request.execute(self.server.context[unit_id])
             else:
-                context = self.server.context[request.unit_id]
                 # TODO: if is key exchange related requests, special process
                 # if isinstance(request, KeyExchangeRequest):
                 #     self.server.xxx = getValue(request)
-                response = request.execute(context)
+                if isinstance(request, EclipsePointRequest): # unit_id 不能等于0，因为等于0就不会进入这个分支
+                    self.server.RA = request.R
+                    self.server.RB, self.server.rB = GenR()
+                    response = EclipsePointResponse(self.server.RB)
+                else:
+                    context = self.server.context[request.unit_id]
+                    response = request.execute(context)
+                # for debug, see if self.server.RA, and self.server.RB are equal with client's
+                _logger.debug("server.RA={}, server.RB={}".format(self.server.RA, self.server.RB))
         except NoSuchSlaveException as ex:
             _logger.debug("requested slave does "
                           "not exist: %s" % request.unit_id )
