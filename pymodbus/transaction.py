@@ -19,7 +19,8 @@ from pymodbus.framer.tls_framer import ModbusTlsFramer
 from pymodbus.framer.binary_framer import ModbusBinaryFramer
 from pymodbus.utilities import hexlify_packets, ModbusTransactionState
 from pymodbus.compat import iterkeys, byte2int
-
+from gmssl.sm4 import CryptSM4, SM4_ENCRYPT, SM4_DECRYPT
+from gmssl import sm3
 
 # Python 2 compatibility.
 try:
@@ -268,10 +269,17 @@ class ModbusTransactionManager(object):
         last_exception = None
         try:
             self.client.connect()
-            # TODO: self.sm4_key 加密， sm3 hash
             packet = self.client.framer.buildPacket(packet)
             if _logger.isEnabledFor(logging.DEBUG):
                 _logger.debug("SEND: " + hexlify_packets(packet))
+            # TODO: self.sm4_key 加密， sm3 hash
+            if hasattr(self.client, "sm4_key"):
+                crypt_sm4 = CryptSM4()
+                crypt_sm4.set_key(bytes.fromhex(self.client.sm4_key), SM4_ENCRYPT)
+                packet = crypt_sm4.crypt_ecb(packet) #  bytes类型
+                # 对 packet hash
+                packet = packet + bytes.fromhex(sm3.sm3_hash(bytearray(packet)))
+                _logger.debug("AFTER ENCRYPTION SEND: " + hexlify_packets(packet))
             size = self._send(packet)
             if isinstance(size, bytes) and self.client.state == ModbusTransactionState.RETRYING:
                 _logger.debug("Changing transaction state from "
