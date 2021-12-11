@@ -9,7 +9,7 @@ from pymodbus.datastore import ModbusSequentialDataBlock, ModbusSparseDataBlock
 from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
 
 from pymodbus.transaction import ModbusRtuFramer, ModbusBinaryFramer
-from pymodbus.key_exchange_message import EclipsePointRequest
+from pymodbus.key_exchange_message import EclipsePointRequest, KDFHashRequest
 
 # --------------------------------------------------------------------------- #
 # configure the service logging
@@ -52,7 +52,7 @@ def run_server():
     # ----------------------------------------------------------------------- #
     # Tcp:
     # use custom_functions to register EclipsePointRequest on ServerDecoder
-    StartTcpServer(context, identity=identity, address=("", 5020),custom_functions=[EclipsePointRequest])
+    StartTcpServer(context, identity=identity, address=("", 5020),custom_functions=[EclipsePointRequest,KDFHashRequest])
 
 if __name__ == "__main__":
     run_server()
