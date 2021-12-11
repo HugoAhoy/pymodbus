@@ -26,6 +26,7 @@ from GM.key_exchange_methods import GenR,ComputeXBar, ComputeT,ComputeFinalPoint
 from GM.constant import ZA, ZB
 from GM.constant import db as privB, db as pubB, pa as pubA_s
 from gmssl import sm3
+from gmssl.sm4 import CryptSM4, SM4_ENCRYPT, SM4_DECRYPT
 # --------------------------------------------------------------------------- #
 # Logging
 # --------------------------------------------------------------------------- #
@@ -90,7 +91,7 @@ class ModbusBaseRequestHandler(socketserver.BaseRequestHandler):
                     symkey_s = GenSymKey(V, ZA, ZB)
                     hash_B = sm3.sm3_hash(bytearray.fromhex(symkey_s))
                     if hash_B == request.hash_value:
-                        self.sm4_key = symkey_s
+                        self.server.sm4_key = symkey_s
                         response = KDFHashResponse(True)
                     else:
                         response = KDFHashResponse(False)
@@ -236,6 +237,19 @@ class ModbusConnectedRequestHandler(ModbusBaseRequestHandler):
                 #         ...
                 #     else:
                 #         ...
+                if hasattr(self.server, "sm4_key"):
+                    crypt_sm4 = CryptSM4()
+                    crypt_sm4.set_key(bytes.fromhex(self.server.sm4_key), SM4_DECRYPT)
+                    # 签名为256位，32个字节
+                    sign = data[-32:]
+                    data = data[:-32]
+                    # hash 校验
+                    if bytes.fromhex(sm3.sm3_hash(bytearray(data))) != sign:
+                        data = b''
+                        _logger.debug("Sign check failed")
+                    else:
+                        data = crypt_sm4.crypt_ecb(data) #  bytes类型ß
+                        _logger.debug("Sign check success, raw packet is "+hexlify_packets(data))
                 self.framer.processIncomingPacket(data, self.execute, units,
                                                   single=single)
             except socket.timeout as msg:
