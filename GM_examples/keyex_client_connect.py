@@ -21,6 +21,11 @@ def run_sync_client():
 
     client.connect()
 
+    # try send a normal request after exchanging key
+    log.debug("Reading Coils")
+    rr = client.read_coils(1, 1, unit=UNIT)
+    log.debug(rr)
+
     # ----------------------------------------------------------------------- #
     # close the client
     # ----------------------------------------------------------------------- #
