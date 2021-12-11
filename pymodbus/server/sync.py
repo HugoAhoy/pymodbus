@@ -21,8 +21,11 @@ from pymodbus.exceptions import NotImplementedException, NoSuchSlaveException
 from pymodbus.pdu import ModbusExceptions as merror
 from pymodbus.compat import socketserver, byte2int
 from pymodbus.key_exchange_message import EclipsePointRequest, EclipsePointResponse
-from GM.key_exchange_methods import GenR
-
+from pymodbus.key_exchange_message import KDFHashRequest, KDFHashResponse
+from GM.key_exchange_methods import GenR,ComputeXBar, ComputeT,ComputeFinalPoint,GenSymKey
+from GM.constant import ZA, ZB
+from GM.constant import db as privB, db as pubB, pa as pubA_s
+from gmssl import sm3
 # --------------------------------------------------------------------------- #
 # Logging
 # --------------------------------------------------------------------------- #
@@ -77,11 +80,26 @@ class ModbusBaseRequestHandler(socketserver.BaseRequestHandler):
                     self.server.RA = request.R
                     self.server.RB, self.server.rB = GenR()
                     response = EclipsePointResponse(self.server.RB)
+                    # for debug, see if self.server.RA, and self.server.RB are equal with client's
+                    _logger.debug("server.RA={}, server.RB={}".format(self.server.RA, self.server.RB))
+                elif isinstance(request, KDFHashRequest):
+                    bar_x2_s = ComputeXBar(self.server.RB)
+                    tB = ComputeT(privB, bar_x2_s, self.server.rB)
+                    bar_x1_s = ComputeXBar(self.server.RA)
+                    V = ComputeFinalPoint(tB, bar_x1_s, self.server.RA, pubA_s)
+                    symkey_s = GenSymKey(V, ZA, ZB)
+                    hash_B = sm3.sm3_hash(bytearray.fromhex(symkey_s))
+                    if hash_B == request.hash_value:
+                        self.sm4_key = symkey_s
+                        response = KDFHashResponse(True)
+                    else:
+                        response = KDFHashResponse(False)
+                    # for debug, see if self.server.sm4_key, and self.server.hash are equal with client's
+                    _logger.debug("server.key={}".format(symkey_s))
+                    _logger.debug("server.hash={}".format(hash_B))
                 else:
                     context = self.server.context[request.unit_id]
                     response = request.execute(context)
-                # for debug, see if self.server.RA, and self.server.RB are equal with client's
-                _logger.debug("server.RA={}, server.RB={}".format(self.server.RA, self.server.RB))
         except NoSuchSlaveException as ex:
             _logger.debug("requested slave does "
                           "not exist: %s" % request.unit_id )

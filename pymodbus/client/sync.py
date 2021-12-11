@@ -16,9 +16,11 @@ from pymodbus.transaction import ModbusSocketFramer, ModbusBinaryFramer
 from pymodbus.transaction import ModbusAsciiFramer, ModbusRtuFramer
 from pymodbus.transaction import ModbusTlsFramer
 from pymodbus.client.common import ModbusClientMixin
-from GM.key_exchange_methods import GenR
-from pymodbus.key_exchange_message import EclipsePointRequest, EclipsePointResponse
-
+from GM.key_exchange_methods import GenR,ComputeXBar, ComputeT,ComputeFinalPoint,GenSymKey
+from pymodbus.key_exchange_message import EclipsePointRequest, EclipsePointResponse, KDFHashRequest, KDFHashResponse
+from GM.constant import da as privA, pa as pubA, pb as pubB_c
+from GM.constant import ZA, ZB
+from gmssl import sm3
 # --------------------------------------------------------------------------- #
 # Logging
 # --------------------------------------------------------------------------- #
@@ -202,6 +204,7 @@ class ModbusTcpClient(BaseModbusClient):
         self.timeout = kwargs.get('timeout',  Defaults.Timeout)
         BaseModbusClient.__init__(self, framer(ClientDecoder(), self), **kwargs)
         self.register(EclipsePointResponse) # register EclipsePointResponse function
+        self.register(KDFHashResponse) # register KDFHashResponse function
 
     def connect(self):
         """ Connect to the modbus tcp server
@@ -222,7 +225,11 @@ class ModbusTcpClient(BaseModbusClient):
             # 发送共钥 client.send(KeyExchangeRequest)
             # 等待response
             # self.sm4_key = processResponse()
-            self.key_exchange()
+            retries = 3
+            while retries > 0:
+                if self.key_exchange():
+                    break
+                retries -= 1
 
         except socket.error as msg:
             _logger.error('Connection to (%s, %s) '
@@ -256,6 +263,22 @@ class ModbusTcpClient(BaseModbusClient):
         self.RB = rr.R
         # for debug, see if self.server.RA, and self.server.RB are equal with client's
         _logger.debug("client.RA={}, client.RB={}".format(self.RA, self.RB))
+        bar_x1_c = ComputeXBar(self.RA)
+        tA = ComputeT(privA, bar_x1_c, self.rA)
+        bar_x2_c = ComputeXBar(self.RB)
+        U = ComputeFinalPoint(tA, bar_x2_c, self.RB, pubB_c)
+        symkey_c = GenSymKey(U, ZA, ZB)
+        hash_A = sm3.sm3_hash(bytearray.fromhex(symkey_c))
+        kdfresponse = self.execute(KDFHashRequest(hash_A, unit=0x1))
+        _logger.debug("client.hash={}".format(hash_A))
+        _logger.debug(kdfresponse)
+        if kdfresponse.verification == True:
+            self.sm4_key = symkey_c
+            _logger.debug("client.key={}".format(self.sm4_key))
+            return True
+        else:
+            return False
+
 
     def _send(self, request):
         """ Sends data on the underlying socket
