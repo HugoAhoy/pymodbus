@@ -5,6 +5,7 @@ Implementation of a Threaded Modbus Server
 """
 from binascii import b2a_hex
 from os import getenv
+import struct
 import serial
 import socket
 import ssl
@@ -92,6 +93,7 @@ class ModbusBaseRequestHandler(socketserver.BaseRequestHandler):
                     hash_B = sm3.sm3_hash(bytearray.fromhex(symkey_s))
                     if hash_B == request.hash_value:
                         self.server.sm4_key = symkey_s
+                        self.server._kdf_hash_response_send = False
                         response = KDFHashResponse(True)
                     else:
                         response = KDFHashResponse(False)
@@ -248,7 +250,7 @@ class ModbusConnectedRequestHandler(ModbusBaseRequestHandler):
                         data = b''
                         _logger.debug("Sign check failed")
                     else:
-                        data = crypt_sm4.crypt_ecb(data) #  bytes类型ß
+                        data = crypt_sm4.crypt_ecb(data) #  bytes类型
                         _logger.debug("Sign check success, raw packet is "+hexlify_packets(data))
                 self.framer.processIncomingPacket(data, self.execute, units,
                                                   single=single)
@@ -279,6 +281,22 @@ class ModbusConnectedRequestHandler(ModbusBaseRequestHandler):
             pdu = self.framer.buildPacket(message)
             if _logger.isEnabledFor(logging.DEBUG):
                 _logger.debug('send: [%s]- %s' % (message, b2a_hex(pdu)))
+                _logger.debug("Response Packet before encryption is: "+hexlify_packets(pdu))
+            # encrypt with sm4，attach length info before the packet
+            if hasattr(self.server, "sm4_key") and self.server._kdf_hash_response_send == True:
+                crypt_sm4 = CryptSM4()
+                crypt_sm4.set_key(bytes.fromhex(self.server.sm4_key), SM4_ENCRYPT)
+                # encryption
+                pdu = crypt_sm4.crypt_ecb(pdu)
+                # add hash
+                pdu = pdu + bytes.fromhex(sm3.sm3_hash(bytearray(pdu)))
+                datalen = len(pdu)
+                _logger.debug('Encrypted Response: [%s]- %s' % (message, b2a_hex(pdu)))
+                _logger.debug("Response Packet after encryption is : "+hexlify_packets(pdu))
+                pdu = struct.pack("Q", datalen) + pdu
+            if isinstance(message, KDFHashResponse) and hasattr(self.server, "sm4_key"):
+                self.server._kdf_hash_response_send = True
+                _logger.debug("Sent KDFHashResponse, next response will be encrypted")
             return self.request.send(pdu)
 
 
