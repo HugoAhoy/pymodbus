@@ -301,7 +301,11 @@ class ModbusTransactionManager(object):
                 if local_echo_packet != packet:
                     return b'', "Wrong local echo"
             # TODO: 考虑 server加密后的 response_length
-            result = self._recv(response_length, full)
+            # 需要在self._sm4_recv里面处理
+            if hasattr(self.client, "sm4_key"):
+                result = self._sm4_recv(response_length, full)
+            else:
+                result = self._recv(response_length, full)
             # result2 = self._recv(response_length, full)
             if _logger.isEnabledFor(logging.DEBUG):
                     _logger.debug("RECV: " + hexlify_packets(result))
@@ -317,6 +321,99 @@ class ModbusTransactionManager(object):
 
     def _send(self, packet, retrying=False):
         return self.client.framer.sendPacket(packet)
+
+    def _sm4_recv(self, expected_response_length, full):
+        total = None
+        len_size = 8 # length of long long
+        read_length = self.client.framer.recvPacket(8)
+        if len(read_length) != len_size:
+            msg_start = "Incomplete message" if read_length else "No response"
+            raise InvalidMessageReceivedException(
+                "%s received, expected at least %d bytes "
+                "(%d received)" % (msg_start, len_size, len(read_length))
+            )
+        packet_len = struct.unpack("Q", read_length)[0]
+        _logger.debug("Encrypted Packet Length: {}".format(packet_len))
+        result = self.client.framer.recvPacket(packet_len)
+        if len(result) != packet_len:
+            msg_start = "Incomplete message" if result else "No response"
+            raise InvalidMessageReceivedException(
+                "%s received, expected at least %d bytes "
+                "(%d received)" % (msg_start, packet_len, len(result))
+            )
+        _logger.debug("Received Encrypted Response is "+hexlify_packets(result))
+        # decrypt response
+        crypt_sm4 = CryptSM4()
+        crypt_sm4.set_key(bytes.fromhex(self.client.sm4_key), SM4_DECRYPT)
+        # 签名为256位，32个字节
+        sign = result[-32:]
+        result = result[:-32]
+        # hash 校验
+        if bytes.fromhex(sm3.sm3_hash(bytearray(result))) != sign:
+            result = b''
+            msg_start = "Damaged message"
+            raise InvalidMessageReceivedException(
+                "%s received, sign check failed" % (msg_start)
+            )
+        else:
+            result = crypt_sm4.crypt_ecb(result) #  bytes类型
+            _logger.debug("Sign check success, raw packet is "+hexlify_packets(result))
+        
+        if not isinstance(self.client.framer, (ModbusSocketFramer,ModbusRtuFramer,ModbusAsciiFramer, ModbusBinaryFramer)):
+            if len(result) == expected_response_length:
+                _logger.debug("Message length is not equal to expected:{}".format(expected_response_length))
+
+        if full:
+            result = result[:expected_response_length]
+        else:
+            exception_length = self._calculate_exception_length()
+            if isinstance(self.client.framer, ModbusSocketFramer):
+                min_size = 8
+            elif isinstance(self.client.framer, ModbusRtuFramer):
+                min_size = 2
+            elif isinstance(self.client.framer, ModbusAsciiFramer):
+                min_size = 5
+            elif isinstance(self.client.framer, ModbusBinaryFramer):
+                min_size = 3
+            else:
+                min_size = expected_response_length
+
+            if isinstance(self.client.framer, ModbusSocketFramer):
+                func_code = byte2int(result[min_size-1])
+            elif isinstance(self.client.framer, ModbusRtuFramer):
+                func_code = byte2int(result[min_size-1])
+            elif isinstance(self.client.framer, ModbusAsciiFramer):
+                func_code = int(result[3:5], 16)
+            elif isinstance(self.client.framer, ModbusBinaryFramer):
+                func_code = byte2int(result[min_size-1])
+            else:
+                func_code = -1
+
+            if func_code < 0x80:    # Not an error
+                if isinstance(self.client.framer, ModbusSocketFramer):
+                    # Ommit UID, which is included in header size
+                    length = struct.unpack(">H", result[4:6])[0] - 1
+                    total = self.client.framer._hsize + length
+                else:
+                    total = expected_response_length
+            else:
+                total = exception_length
+
+        actual = len(result)
+        if total is not None and actual != total:
+            msg_start = "Incomplete message" if actual else "No response"
+            _logger.debug("{} received, "
+                          "Expected {} bytes Recieved "
+                          "{} bytes !!!!".format(msg_start, total, actual))
+        elif actual == 0:
+            # If actual == 0 and total is not None then the above
+            # should be triggered, so total must be None here
+            _logger.debug("No response received to unbounded read !!!!")
+        if self.client.state != ModbusTransactionState.PROCESSING_REPLY:
+            _logger.debug("Changing transaction state from "
+                          "'WAITING FOR REPLY' to 'PROCESSING REPLY'")
+            self.client.state = ModbusTransactionState.PROCESSING_REPLY
+        return result
 
     def _recv(self, expected_response_length, full):
         total = None
