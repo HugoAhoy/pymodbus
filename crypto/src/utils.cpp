@@ -155,9 +155,9 @@ void StringToBytes(string Mess, Byte* Message){
 void StringToWords(string mess, Word* Message, int n){
     int length = mess.size();
     // cout << "length = " << length << endl;
-    if(length != n*32){
-        cout << "Length error. " << endl;
-    }
+    // if(length != n*32){
+    //     cout << "Length error. " << endl;
+    // }
     for(int i=0; i<n; i++){
         Message[i] = (Word) mess.substr(i*32, (i+1)*32);
     }

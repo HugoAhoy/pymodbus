@@ -211,18 +211,18 @@ void TEST_SM4(){
     KeyExpansion(Key, Keywords); // Generate the round keys
 
     Encryption(Messages, Keywords, CipherText);
-    cout << "Cipher Text: " << endl;
-    for(int i=0; i<Nk; i++){
-        cout <<  hex << CipherText[i].to_ulong() << " ";
-    }
-    cout << endl;
+    // cout << "Cipher Text: " << endl;
+    // for(int i=0; i<Nk; i++){
+    //     cout <<  hex << CipherText[i].to_ulong() << " ";
+    // }
+    // cout << endl;
 
     Decryption(CipherText, Keywords, Messages);
-    cout << "Decrypted Text: " << endl;
-    for(int i=0; i<Nk; i++){
-        cout << hex << Messages[i].to_ulong() << " ";
-    }
-    cout << endl;
+    // cout << "Decrypted Text: " << endl;
+    // for(int i=0; i<Nk; i++){
+    //     cout << hex << Messages[i].to_ulong() << " ";
+    // }
+    // cout << endl;
 }
 
 void SM4_CBC(){
@@ -302,7 +302,7 @@ int main(int argc, char*argv[]){
         decrypted_mess.append(p_mess);
     }
     ofstream outfile;
-    outfile.open("./dec.txt");
+    outfile.open("./info/dec.txt");
     outfile << decrypted_mess;
 
     return 0;

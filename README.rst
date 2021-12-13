@@ -26,6 +26,18 @@ party dependencies (aside from pyserial) if a more lightweight project is
 needed.  Furthermore, it should work fine under any python version > 2.7
 (including python 3+)
 
+------------------------------------------------------------
+Log
+------------------------------------------------------------
+
+更新版本 2021.12.14
+
+添加 ``./crypo`` 包，内含所需密码学函数。
+运行前先 ``cd ./crypto`` 并执行 ``make``, 生成所需编译文件和某个辅助文件夹。
+后按之前运行方式运行即可。
+
+[问题：] 一次正常通讯后，即server收到client的加密packet, 解密并验证成功；client收到server加密的pdu，解密并验证成功。 server还会处于存在key的状态继续接收，遂报错sign check filed.
+
 
 ------------------------------------------------------------
 Features

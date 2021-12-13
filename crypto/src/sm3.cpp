@@ -223,7 +223,7 @@ int main(int argc, char* argv[]){
     }
     
     message = argv[1];
-    cout << "Check: " << message << endl;
+    // cout << "Check: " << message << endl;
     // #ifdef DEBUG
     //     string message = "011000010110001001100011";
     // #endif
@@ -234,7 +234,7 @@ int main(int argc, char* argv[]){
     // #endif
 
     int l = message.size();
-    cout << "message length: " << l << endl;
+    // cout << "message length: " << l << endl;
     int n = (ceil((l+1-padLen) / padAll) > 0) ? floor((l+1-padLen) / padAll) + 1 : 0;
     int k = n*padAll + padLen - (l + 1);
     n = ((l+1)+k+64) / 32;
@@ -259,16 +259,16 @@ int main(int argc, char* argv[]){
     }
     clock_t time_end = clock();
 
-    cout << "Final v: " << endl;
-    for(int i=0; i<8; i++){
-        cout << hex << newV[i].to_ulong() << " ";
-    }
-    cout << endl;
+    // cout << "Final v: " << endl;
+    // for(int i=0; i<8; i++){
+    //     cout << hex << newV[i].to_ulong() << " ";
+    // }
+    // cout << endl;
 
     string finalV = "";
     finalV = WordsToString(newV, 8);
     ofstream outfile;
-    outfile.open("./hash.txt");
+    outfile.open("./info/hash.txt");
     outfile << finalV;
 
     // cout << "Padding time: " << (time_after_padding - time_begin_padding)*1.0 / CLOCKS_PER_SEC << endl;

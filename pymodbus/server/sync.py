@@ -10,9 +10,10 @@ import serial
 import socket
 import ssl
 import traceback
+import os
 
 from pymodbus.constants import Defaults
-from pymodbus.utilities import hexlify_packets
+from pymodbus.utilities import hexlify_packets, encode_bytes_obj, decode_bytes_object, padding, encode_byte_array
 from pymodbus.factory import ServerDecoder
 from pymodbus.datastore import ModbusServerContext
 from pymodbus.device import ModbusControlBlock
@@ -28,6 +29,8 @@ from GM.constant import ZA, ZB
 from GM.constant import db as privB, db as pubB, pa as pubA_s
 from gmssl import sm3
 from gmssl.sm4 import CryptSM4, SM4_ENCRYPT, SM4_DECRYPT
+from pymodbus.exceptions import InvalidMessageReceivedException
+
 # --------------------------------------------------------------------------- #
 # Logging
 # --------------------------------------------------------------------------- #
@@ -239,19 +242,54 @@ class ModbusConnectedRequestHandler(ModbusBaseRequestHandler):
                 #         ...
                 #     else:
                 #         ...
+                # transform key to binary
                 if hasattr(self.server, "sm4_key"):
-                    crypt_sm4 = CryptSM4()
-                    crypt_sm4.set_key(bytes.fromhex(self.server.sm4_key), SM4_DECRYPT)
-                    # 签名为256位，32个字节
-                    sign = data[-32:]
-                    data = data[:-32]
-                    # hash 校验
-                    if bytes.fromhex(sm3.sm3_hash(bytearray(data))) != sign:
-                        data = b''
-                        _logger.debug("Sign check failed")
-                    else:
-                        data = crypt_sm4.crypt_ecb(data) #  bytes类型
-                        _logger.debug("Sign check success, raw packet is "+hexlify_packets(data))
+                    _logger.debug("received length: "+str(len(data)))
+                    key = bin(int(self.server.sm4_key, 16))[2:]
+                    data = encode_byte_array(data)
+                    _logger.debug("length of received info: "+str(len(data)))
+                    key = bin(int(self.server.sm4_key, 16))[2:]
+                    sign = data[-256:]
+                    result = data[:-256]
+
+                    # check sign
+                    # generate hash for packet
+                    hash_command = "./crypto/bin/sm3 "+result
+                    os.system(hash_command)
+                    with open('./info/hash.txt', 'r') as f:
+                        sm3_hash = f.read()
+                    
+                    if(sm3_hash != sign): # check hash
+                        msg_start = "Damaged message"
+                        raise InvalidMessageReceivedException(
+                            "%s received, sign check failed" % (msg_start)
+                        )
+                    else: # if ok, decrypt info.
+                        dec_command = "./crypto/bin/sm4_dec "+result + " " + key
+                        os.system(dec_command)
+                        with open('./info/dec.txt', 'r') as f:
+                            dec_text = f.read()
+                        
+                        valid_len = int(dec_text[-128:], 2)
+                        seq_packet = dec_text[:valid_len]
+                        packet_obj = decode_bytes_object(seq_packet, True)
+                        _logger.debug("Sign check success, raw packet is "+hexlify_packets(packet_obj))
+                        data = packet_obj
+                
+                # if hasattr(self.server, "sm4_key"):
+                #     crypt_sm4 = CryptSM4()
+                #     crypt_sm4.set_key(bytes.fromhex(self.server.sm4_key), SM4_DECRYPT)
+                #     # 签名为256位，32个字节
+                #     sign = data[-32:]
+                #     data = data[:-32]
+                #     # hash 校验
+                #     if bytes.fromhex(sm3.sm3_hash(bytearray(data))) != sign:
+                #         data = b''
+                #         _logger.debug("Sign check failed")
+                #     else:
+                #         data = crypt_sm4.crypt_ecb(data) #  bytes类型
+                #         _logger.debug("Sign check success, raw packet is "+hexlify_packets(data))
+                        
                 self.framer.processIncomingPacket(data, self.execute, units,
                                                   single=single)
             except socket.timeout as msg:
@@ -284,16 +322,34 @@ class ModbusConnectedRequestHandler(ModbusBaseRequestHandler):
                 _logger.debug("Response Packet before encryption is: "+hexlify_packets(pdu))
             # encrypt with sm4，attach length info before the packet
             if hasattr(self.server, "sm4_key") and self.server._kdf_hash_response_send == True:
-                crypt_sm4 = CryptSM4()
-                crypt_sm4.set_key(bytes.fromhex(self.server.sm4_key), SM4_ENCRYPT)
-                # encryption
-                pdu = crypt_sm4.crypt_ecb(pdu)
-                # add hash
-                pdu = pdu + bytes.fromhex(sm3.sm3_hash(bytearray(pdu)))
-                datalen = len(pdu)
-                _logger.debug('Encrypted Response: [%s]- %s' % (message, b2a_hex(pdu)))
-                _logger.debug("Response Packet after encryption is : "+hexlify_packets(pdu))
-                pdu = struct.pack("Q", datalen) + pdu
+                # crypt_sm4 = CryptSM4()
+                # crypt_sm4.set_key(bytes.fromhex(self.server.sm4_key), SM4_ENCRYPT)
+                key = bin(int(self.server.sm4_key, 16))[2:]
+                # encrypt packet
+                test_p = encode_bytes_obj(pdu)
+                plain_text = padding(test_p)
+                enc_command = './crypto/bin/sm4_enc '+plain_text+" "+key
+                os.system(enc_command)
+                
+                with open('./info/enc.txt', 'r') as f:
+                    cipher_text = f.read()
+                
+                # generate hash for packet
+                hash_command = "./crypto/bin/sm3 "+cipher_text
+                os.system(hash_command)
+                with open('./info/hash.txt', 'r') as f:
+                    sm3_hash = f.read()
+                sending_pdu = decode_bytes_object(cipher_text+sm3_hash)
+                datalen = len(sending_pdu)
+                pdu = struct.pack("Q", datalen) + sending_pdu
+                # # encryption
+                # pdu = crypt_sm4.crypt_ecb(pdu)
+                # # add hash
+                # pdu = pdu + bytes.fromhex(sm3.sm3_hash(bytearray(pdu)))
+                # datalen = len(pdu)
+                # _logger.debug('Encrypted Response: [%s]- %s' % (message, b2a_hex(pdu)))
+                # _logger.debug("Response Packet after encryption is : "+hexlify_packets(pdu))
+                # pdu = struct.pack("Q", datalen) + pdu
             if isinstance(message, KDFHashResponse) and hasattr(self.server, "sm4_key"):
                 self.server._kdf_hash_response_send = True
                 _logger.debug("Sent KDFHashResponse, next response will be encrypted")

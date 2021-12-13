@@ -253,7 +253,6 @@ def hexlify_packets(packet):
     else:
         return u" ".join([hex(byte2int(x)) for x in packet])
 
-
 def encode_bytes_obj(object):
     """encode the object to string.
     """
@@ -264,8 +263,14 @@ def encode_bytes_obj(object):
         obj_string += val
     return obj_string
 
+def encode_byte_array(obj_byte_array):
+    obj_string = ""
+    for item in obj_byte_array:
+        val = bin(item)[2:].zfill(8)
+        obj_string += val
+    return obj_string
 
-def decode_bytes_object(object_string):
+def decode_bytes_object(object_string, object_trans=False):
     """Decode the transformed object string
     """
     object = bytearray()
@@ -273,10 +278,13 @@ def decode_bytes_object(object_string):
     for i in range(length):
         val = int(object_string[i*8:(i+1)*8], 2)
         object.append(val)
-    object = bytes(object)
-    return pickle.loads(object)
+    if object_trans:
+        object = bytes(object)
+        return pickle.loads(object)
+    return object
+        
 
-def padding(plain_text, block_len):
+def padding(plain_text, block_len=128):
     """padding the plain-text string to plain_text||o*n||len*128
     """
     len_p = len(plain_text)

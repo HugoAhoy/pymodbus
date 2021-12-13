@@ -8,6 +8,7 @@ import socket
 import time
 from threading import RLock
 from functools import partial
+import os
 
 from pymodbus.exceptions import ModbusIOException, NotImplementedException
 from pymodbus.exceptions import InvalidMessageReceivedException
@@ -17,7 +18,7 @@ from pymodbus.framer.rtu_framer import ModbusRtuFramer
 from pymodbus.framer.socket_framer import ModbusSocketFramer
 from pymodbus.framer.tls_framer import ModbusTlsFramer
 from pymodbus.framer.binary_framer import ModbusBinaryFramer
-from pymodbus.utilities import hexlify_packets, ModbusTransactionState, encode_bytes_obj, decode_bytes_object
+from pymodbus.utilities import hexlify_packets, ModbusTransactionState, encode_bytes_obj, decode_bytes_object, padding, encode_byte_array
 from pymodbus.compat import iterkeys, byte2int
 from gmssl.sm4 import CryptSM4, SM4_ENCRYPT, SM4_DECRYPT
 from gmssl import sm3
@@ -274,19 +275,32 @@ class ModbusTransactionManager(object):
                 _logger.debug("SEND: " + hexlify_packets(packet))
             # TODO: self.sm4_key 加密， sm3 hash
             if hasattr(self.client, "sm4_key"):
-                # crypt_sm4 = CryptSM4()
-                # crypt_sm4.set_key(bytes.fromhex(self.client.sm4_key), SM4_ENCRYPT)
-                # packet = crypt_sm4.crypt_ecb(packet) #  bytes类型
+                
+                # transform key to binary
                 key = bin(int(self.client.sm4_key, 16))[2:]
+                
+                # encrypt packet
                 test_p = encode_bytes_obj(packet)
+                plain_text = padding(test_p)
+                enc_command = './crypto/bin/sm4_enc '+plain_text+" "+key
+                os.system(enc_command)
                 
-                _logger.debug("See packets: " + test_p + " " + str(len(test_p)))
-                packet_loaded = decode_bytes_object(test_p)
-                _logger.debug("loadedd packet: " + hexlify_packets(packet))
+                with open('./info/enc.txt', 'r') as f:
+                    cipher_text = f.read()
                 
-                # 对 packet hash
-                packet = packet + bytes.fromhex(sm3.sm3_hash(bytearray(packet)))
-                _logger.debug("AFTER ENCRYPTION SEND: " + hexlify_packets(packet))
+                # generate hash for packet
+                hash_command = "./crypto/bin/sm3 "+cipher_text
+                os.system(hash_command)
+                with open('./info/hash.txt', 'r') as f:
+                    sm3_hash = f.read()
+                
+                sending_packet = decode_bytes_object(cipher_text+sm3_hash)
+                _logger.debug("AFTER ENCRYPTION SEND: " + hexlify_packets(sending_packet))
+                _logger.debug("TOTAL LENGTH: " + str(len(sending_packet)))
+                packet = sending_packet
+                # # 对 packet hash
+                # packet = packet + bytes.fromhex(sm3.sm3_hash(bytearray(packet)))
+                # _logger.debug("AFTER ENCRYPTION SEND: " + hexlify_packets(packet))
             size = self._send(packet)
             if isinstance(size, bytes) and self.client.state == ModbusTransactionState.RETRYING:
                 _logger.debug("Changing transaction state from "
@@ -349,22 +363,53 @@ class ModbusTransactionManager(object):
                 "(%d received)" % (msg_start, packet_len, len(result))
             )
         _logger.debug("Received Encrypted Response is "+hexlify_packets(result))
-        # decrypt response
-        crypt_sm4 = CryptSM4()
-        crypt_sm4.set_key(bytes.fromhex(self.client.sm4_key), SM4_DECRYPT)
-        # 签名为256位，32个字节
-        sign = result[-32:]
-        result = result[:-32]
-        # hash 校验
-        if bytes.fromhex(sm3.sm3_hash(bytearray(result))) != sign:
-            result = b''
+        
+        # transform key to binary
+        key = bin(int(self.client.sm4_key, 16))[2:]
+        result = encode_byte_array(result)
+        sign = result[-256:]
+        result = result[:-256]
+        
+        # check sign
+        # generate hash for packet
+        hash_command = "./crypto/bin/sm3 "+result
+        os.system(hash_command)
+        with open('./info/hash.txt', 'r') as f:
+            sm3_hash = f.read()
+        
+        if(sm3_hash != sign): # check hash
             msg_start = "Damaged message"
             raise InvalidMessageReceivedException(
                 "%s received, sign check failed" % (msg_start)
             )
-        else:
-            result = crypt_sm4.crypt_ecb(result) #  bytes类型
-            _logger.debug("Sign check success, raw packet is "+hexlify_packets(result))
+        else: # if ok, decrypt info.
+            dec_command = "./crypto/bin/sm4_dec "+result + " " + key
+            os.system(dec_command)
+            with open('./info/dec.txt', 'r') as f:
+                dec_text = f.read()
+            
+            valid_len = int(dec_text[-128:], 2)
+            seq_packet = dec_text[:valid_len]
+            packet_obj = decode_bytes_object(seq_packet, True)
+            _logger.debug("Sign check success, raw packet is "+hexlify_packets(packet_obj))
+            result = packet_obj
+            
+        # # decrypt response
+        # crypt_sm4 = CryptSM4()
+        # crypt_sm4.set_key(bytes.fromhex(self.client.sm4_key), SM4_DECRYPT)
+        # # 签名为256位，32个字节
+        # sign = result[-32:]
+        # result = result[:-32]
+        # # hash 校验
+        # if bytes.fromhex(sm3.sm3_hash(bytearray(result))) != sign:
+        #     result = b''
+        #     msg_start = "Damaged message"
+        #     raise InvalidMessageReceivedException(
+        #         "%s received, sign check failed" % (msg_start)
+        #     )
+        # else:
+        #     result = crypt_sm4.crypt_ecb(result) #  bytes类型
+        #     _logger.debug("Sign check success, raw packet is "+hexlify_packets(result))
         
         if not isinstance(self.client.framer, (ModbusSocketFramer,ModbusRtuFramer,ModbusAsciiFramer, ModbusBinaryFramer)):
             if len(result) == expected_response_length:
