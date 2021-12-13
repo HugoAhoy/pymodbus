@@ -5,6 +5,7 @@ Modbus Utilities
 A collection of utilities for packing data, unpacking
 data computing checksums, and decode checksums.
 """
+from struct import pack
 from pymodbus.compat import int2byte, byte2int, IS_PYTHON3
 from six import string_types
 
@@ -249,6 +250,26 @@ def hexlify_packets(packet):
         return " ".join([hex(byte2int(x)) for x in packet])
     else:
         return u" ".join([hex(byte2int(x)) for x in packet])
+
+
+def encode_packets(packet):
+    if not packet:
+        return ''
+    if IS_PYTHON3:
+        return "".join([bin(byte2int(x))[2:].zfill(8) for x in packet])
+    else:
+        return u"".join([hex(byte2int(x))[2:] for x in packet])
+
+
+def decode_packets(packet_string):
+    packet = []
+    length = len(packet_string)/8
+    for i in range(length):
+        val = int(packet_string[i*8:(i+1)*8], 2)
+        packet.append(int2byte(val))
+    return packet
+    
+
 # --------------------------------------------------------------------------- #
 # Exported symbols
 # --------------------------------------------------------------------------- #
