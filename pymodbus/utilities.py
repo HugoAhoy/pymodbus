@@ -8,6 +8,8 @@ data computing checksums, and decode checksums.
 from struct import pack
 from pymodbus.compat import int2byte, byte2int, IS_PYTHON3
 from six import string_types
+import pickle
+import math
 
 
 class ModbusTransactionState(object):
@@ -252,23 +254,38 @@ def hexlify_packets(packet):
         return u" ".join([hex(byte2int(x)) for x in packet])
 
 
-def encode_packets(packet):
-    if not packet:
-        return ''
-    if IS_PYTHON3:
-        return "".join([bin(byte2int(x))[2:].zfill(8) for x in packet])
-    else:
-        return u"".join([hex(byte2int(x))[2:] for x in packet])
+def encode_bytes_obj(object):
+    """encode the object to string.
+    """
+    encoded_obj = pickle.dumps(object)
+    obj_string = ""
+    for item in encoded_obj:
+        val = bin(item)[2:].zfill(8)
+        obj_string += val
+    return obj_string
 
 
-def decode_packets(packet_string):
-    packet = []
-    length = len(packet_string)/8
+def decode_bytes_object(object_string):
+    """Decode the transformed object string
+    """
+    object = bytearray()
+    length = int(len(object_string)/8)
     for i in range(length):
-        val = int(packet_string[i*8:(i+1)*8], 2)
-        packet.append(int2byte(val))
-    return packet
+        val = int(object_string[i*8:(i+1)*8], 2)
+        object.append(val)
+    object = bytes(object)
+    return pickle.loads(object)
+
+def padding(plain_text, block_len):
+    """padding the plain-text string to plain_text||o*n||len*128
+    """
+    len_p = len(plain_text)
+    block_all = math.ceil(len_p / block_len)
+    less_len = (block_all*block_len) - len_p
+    less_string = "0"*less_len
     
+    padding_length = '{0:0128b}'.format(len_p)
+    return plain_text+less_string+padding_length
 
 # --------------------------------------------------------------------------- #
 # Exported symbols
