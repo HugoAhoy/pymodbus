@@ -244,6 +244,8 @@ class ModbusConnectedRequestHandler(ModbusBaseRequestHandler):
                 #         ...
                 # transform key to binary
                 if hasattr(self.server, "sm4_key"):
+                    if(len(data) == 0):
+                        return 
                     _logger.debug("received length: "+str(len(data)))
                     key = bin(int(self.server.sm4_key, 16))[2:]
                     data = encode_byte_array(data)
@@ -342,6 +344,7 @@ class ModbusConnectedRequestHandler(ModbusBaseRequestHandler):
                 sending_pdu = decode_bytes_object(cipher_text+sm3_hash)
                 datalen = len(sending_pdu)
                 pdu = struct.pack("Q", datalen) + sending_pdu
+                _logger.debug("Encryption pdu SEND: "+hexlify_packets(pdu))
                 # # encryption
                 # pdu = crypt_sm4.crypt_ecb(pdu)
                 # # add hash
