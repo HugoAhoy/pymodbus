@@ -7,6 +7,7 @@
 * 密码学文件： ``./crypto`` 中包含sm3, sm4代码。
 * 密钥协商：``./GM/key_exchange_methods.py``
 * 其他代码部分见PPT。
+* python版本密码算法部分见分支：remotes/origin/purepy_archive
 
 ## 运行方式
 
